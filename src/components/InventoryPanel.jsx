@@ -1,41 +1,62 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { X, Warehouse, AlertTriangle, CheckCircle2, Layers, MapPin } from 'lucide-react';
 
 export default function InventoryPanel({ product, isOpen, onClose }) {
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const dialog = useRef(null);
 
   useEffect(() => {
-    if (isOpen && product?.productid) {
-      fetchInventory(product.productid);
+    if (!isOpen) return;
+    const previous = document.activeElement;
+    const element = dialog.current;
+    element?.focus();
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose();
+      if (event.key === 'Tab') {
+        const buttons = element?.querySelectorAll('button:not(:disabled)');
+        const first = buttons?.[0];
+        const last = buttons?.[buttons.length - 1];
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === element)) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); previous?.focus(); };
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen || !product?.productid) return;
+    let active = true;
+    async function fetchInventory() {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('productinventory')
+          .select(`
+            quantity,
+            shelf,
+            bin,
+            location (
+              locationid,
+              name
+            )
+          `)
+          .eq('productid', product.productid);
+
+        if (error) throw error;
+        if (active) setInventory(data || []);
+      } catch (err) {
+        if (active) setError('No se pudo consultar el inventario: ' + err.message);
+      } finally {
+        if (active) setLoading(false);
+      }
     }
+    fetchInventory();
+    return () => { active = false; };
   }, [isOpen, product]);
-
-  async function fetchInventory(productId) {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('productinventory')
-        .select(`
-          quantity,
-          shelf,
-          bin,
-          location (
-            locationid,
-            name
-          )
-        `)
-        .eq('productid', productId);
-
-      if (error) throw error;
-      setInventory(data || []);
-    } catch (err) {
-      console.error('Error al obtener inventario:', err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   if (!isOpen || !product) return null;
 
@@ -43,7 +64,7 @@ export default function InventoryPanel({ product, isOpen, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl shadow-black/80 flex flex-col max-h-[90vh]">
+      <div ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="inventory-title" className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl shadow-black/80 flex flex-col max-h-[90vh]">
         {/* Header Modal */}
         <div className="flex items-start justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -51,11 +72,12 @@ export default function InventoryPanel({ product, isOpen, onClose }) {
               <Warehouse size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-100">{product.name}</h2>
+              <h2 id="inventory-title" className="text-lg font-bold text-slate-100">{product.name}</h2>
               <p className="text-xs text-slate-400 font-mono">Código: {product.productnumber} • ID: #{product.productid}</p>
             </div>
           </div>
           <button
+            aria-label="Cerrar inventario"
             onClick={onClose}
             className="text-slate-400 hover:text-slate-100 p-1.5 rounded-lg hover:bg-slate-800 transition"
           >
@@ -68,13 +90,13 @@ export default function InventoryPanel({ product, isOpen, onClose }) {
           <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl">
             <span className="text-[11px] text-slate-500 block">Stock Total Registrado</span>
             <span className={`text-xl font-bold font-mono ${totalStock === 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-              {totalStock} uds
+              {loading || error ? '—' : `${totalStock} uds`}
             </span>
           </div>
           <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl">
             <span className="text-[11px] text-slate-500 block">Centros / Ubicaciones</span>
             <span className="text-xl font-bold font-mono text-slate-200">
-              {inventory.length}
+              {loading || error ? '—' : inventory.length}
             </span>
           </div>
         </div>
@@ -83,7 +105,7 @@ export default function InventoryPanel({ product, isOpen, onClose }) {
         <div className="flex-1 overflow-y-auto space-y-2 pr-1">
           {loading ? (
             <div className="text-center py-8 text-xs text-slate-500">Cargando ubicaciones de stock...</div>
-          ) : inventory.length === 0 ? (
+          ) : error ? <p role="alert" className="error-banner">{error}</p> : inventory.length === 0 ? (
             <div className="text-center py-8 bg-slate-950/40 rounded-xl border border-slate-800/60 p-4">
               <AlertTriangle className="mx-auto text-amber-400 mb-2" size={24} />
               <p className="text-xs text-slate-400">Este producto no cuenta con registros de inventario asignados.</p>

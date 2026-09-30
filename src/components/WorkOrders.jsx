@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { createWorkOrder, listWorkOrders } from '../services/workOrders';
 import { Plus, X, Wrench, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function WorkOrders({ products }) {
@@ -15,89 +16,42 @@ export default function WorkOrders({ products }) {
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const submitLock = useRef(false);
 
   useEffect(() => {
-    fetchOrders();
+    let active = true;
+    listWorkOrders(supabase).then((data) => {
+      if (active) setOrders(data);
+    }).catch((err) => {
+      if (active) setLoadError('No se pudieron cargar las órdenes: ' + err.message);
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
   }, []);
-
-  async function fetchOrders() {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('workorder')
-        .select(`
-          workorderid,
-          orderqty,
-          startdate,
-          enddate,
-          product ( name )
-        `)
-        .order('workorderid', { ascending: false })
-        .limit(20);
-
-      if (error) throw error;
-      setOrders(data || []);
-    } catch (err) {
-      console.error('Error cargando órdenes:', err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitLock.current) return;
     setFormError('');
     setFormSuccess('');
 
-    // Validación HU-03: Fecha Inicio no debe ser mayor a Fecha Fin
-    if (new Date(startDate) > new Date(endDate)) {
-      setFormError('La Fecha de Inicio no puede ser posterior a la Fecha de Fin.');
-      return;
-    }
-
-    if (orderQty <= 0) {
-      setFormError('La cantidad debe ser mayor a 0.');
-      return;
-    }
-
     try {
+      submitLock.current = true;
       setSubmitting(true);
-      
-      const qty = parseInt(orderQty);
-
-      // Inserción con todos los campos obligatorios que exige la BD AdventureWorks
-      const { data, error } = await supabase
-        .from('workorder')
-        .insert([{
-          productid: parseInt(productId),
-          orderqty: qty,
-          stockedqty: qty,         // <-- Agregado para cumplir con el NOT NULL
-          scrappedqty: 0,
-          startdate: startDate,
-          enddate: endDate,
-          duedate: endDate,        // <-- Agregado para cumplir con el NOT NULL
-          modifieddate: new Date().toISOString() // <-- Fecha actual obligatoria
-        }])
-        .select();
-
-      if (error) throw error;
-
+      const order = await createWorkOrder(supabase, { productId, orderQty, startDate, endDate });
+      setOrders((current) => [order, ...current].slice(0, 20));
       setFormSuccess('¡Orden de trabajo registrada exitosamente!');
-      
-      // Limpiar formulario y recargar lista
-      setTimeout(() => {
-        setIsModalOpen(false);
-        setFormSuccess('');
-        setProductId('');
-        setOrderQty('');
-        setStartDate('');
-        setEndDate('');
-        fetchOrders(); // Actualiza la vista mostrando la nueva orden
-      }, 1500);
-
+      setIsModalOpen(false);
+      setProductId('');
+      setOrderQty('');
+      setStartDate('');
+      setEndDate('');
     } catch (err) {
       setFormError('Error al guardar: ' + err.message);
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   };
@@ -107,14 +61,15 @@ export default function WorkOrders({ products }) {
       {/* Header del módulo */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-slate-100 flex items-center gap-2">
+          <h2 className="text-xl font-medium text-slate-100 flex items-center gap-2">
             <Wrench className="text-emerald-400" />
-            Órdenes de Trabajo
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">Gestión y programación de ensamblaje (HU-03)</p>
+            Órdenes recientes
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">Las últimas 20 órdenes registradas, de la más reciente a la más antigua.</p>
         </div>
         <button
-          onClick={() => setIsModalOpen(true)}
+          disabled={loading}
+          onClick={() => { setFormError(''); setFormSuccess(''); setIsModalOpen(true); }}
           className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
         >
           <Plus size={16} />
@@ -122,6 +77,8 @@ export default function WorkOrders({ products }) {
         </button>
       </div>
 
+      {loadError && <p role="alert" className="text-red-400 text-sm">{loadError}</p>}
+      {formSuccess && <p role="status" className="text-emerald-400 text-sm"><CheckCircle2 className="inline mr-2" size={16} />{formSuccess}</p>}
       {/* Tabla de Órdenes */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-5 shadow-xl overflow-x-auto">
         {loading ? (
@@ -141,7 +98,7 @@ export default function WorkOrders({ products }) {
             <tbody className="divide-y divide-slate-800/60">
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="text-center py-8 text-slate-500">No hay órdenes registradas.</td>
+                  <td colSpan="6" className="text-center py-8 text-slate-500">{loadError ? 'Listado no disponible.' : 'No hay órdenes registradas.'}</td>
                 </tr>
               ) : (
                 orders.map((o) => (
@@ -149,8 +106,8 @@ export default function WorkOrders({ products }) {
                     <td className="p-3 font-mono text-emerald-400 font-medium">WO-{o.workorderid}</td>
                     <td className="p-3 font-semibold text-slate-200">{o.product?.name || 'Desconocido'}</td>
                     <td className="p-3 font-mono text-right">{o.orderqty} uds</td>
-                    <td className="p-3 font-mono text-slate-400 text-center">{new Date(o.startdate).toLocaleDateString()}</td>
-                    <td className="p-3 font-mono text-slate-400 text-center">{new Date(o.enddate).toLocaleDateString()}</td>
+                    <td className="p-3 font-mono text-slate-400 text-center">{o.startdate?.slice(0, 10) || '—'}</td>
+                    <td className="p-3 font-mono text-slate-400 text-center">{o.enddate?.slice(0, 10) || '—'}</td>
                     <td className="p-3 text-center">
                       <span className="bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-lg text-[10px] font-bold border border-emerald-500/20">
                         Programada
@@ -167,29 +124,25 @@ export default function WorkOrders({ products }) {
       {/* Modal de Nueva Orden (Formulario CRUD) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
+          <div role="dialog" aria-modal="true" aria-labelledby="order-title" className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-bold text-slate-100">Registrar Orden</h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white transition">
+              <h2 id="order-title" className="text-lg font-bold text-slate-100">Registrar Orden</h2>
+              <button aria-label="Cerrar formulario" disabled={submitting} onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white transition">
                 <X size={20} />
               </button>
             </div>
 
             {formError && (
-              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2 text-red-400 text-xs">
+              <div role="alert" className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2 text-red-400 text-xs">
                 <AlertCircle size={16} className="shrink-0" /> {formError}
               </div>
             )}
-            {formSuccess && (
-              <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2 text-emerald-400 text-xs">
-                <CheckCircle2 size={16} className="shrink-0" /> {formSuccess}
-              </div>
-            )}
-
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Producto a ensamblar</label>
+                <label htmlFor="order-product" className="block text-xs font-medium text-slate-400 mb-1">Producto a ensamblar</label>
                 <select
+                  id="order-product"
+                  disabled={submitting}
                   required
                   value={productId}
                   onChange={(e) => setProductId(e.target.value)}
@@ -203,8 +156,12 @@ export default function WorkOrders({ products }) {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Cantidad Ordenada (OrderQty)</label>
+                <label htmlFor="order-qty" className="block text-xs font-medium text-slate-400 mb-1">Cantidad Ordenada (OrderQty)</label>
                 <input
+                  id="order-qty"
+                  disabled={submitting}
+                  step="1"
+                  max="2147483647"
                   type="number"
                   required
                   min="1"
@@ -217,8 +174,10 @@ export default function WorkOrders({ products }) {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Fecha de Inicio</label>
+                  <label htmlFor="order-start" className="block text-xs font-medium text-slate-400 mb-1">Fecha de Inicio</label>
                   <input
+                    id="order-start"
+                    disabled={submitting}
                     type="date"
                     required
                     value={startDate}
@@ -227,8 +186,10 @@ export default function WorkOrders({ products }) {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Fecha de Fin</label>
+                  <label htmlFor="order-end" className="block text-xs font-medium text-slate-400 mb-1">Fecha de Fin</label>
                   <input
+                    id="order-end"
+                    disabled={submitting}
                     type="date"
                     required
                     value={endDate}

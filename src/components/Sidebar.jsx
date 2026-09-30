@@ -1,105 +1,22 @@
-import { LayoutDashboard, Package, Wrench, Warehouse, Settings, BarChart3, LogOut, X } from 'lucide-react';
-import { supabase } from '../supabaseClient';
+﻿import { LayoutDashboard, Package, Wrench, Warehouse, BarChart3, LogOut, X, Layers3, ArrowUpRight } from 'lucide-react';
 
-export default function Sidebar({ activeTab, setActiveTab, user, isMobileOpen, setIsMobileOpen }) {
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'products', label: 'Productos', icon: Package },
-    { id: 'workorders', label: 'Órdenes Trabajo', icon: Wrench },
-    { id: 'inventory', label: 'Inventario', icon: Warehouse },
-    { id: 'analytics', label: 'Analítica', icon: BarChart3 },
-  ];
+const items = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'products', label: 'Productos', icon: Package },
+  { id: 'workorders', label: 'Órdenes Trabajo', icon: Wrench },
+  { id: 'inventory', label: 'Inventario', icon: Warehouse },
+  { id: 'analytics', label: 'Analítica', icon: BarChart3 },
+];
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
-
-  const handleSelectTab = (id) => {
-    setActiveTab(id);
-    setIsMobileOpen(false); // Cierra el menú al seleccionar una opción en celular
-  };
-
-  return (
-    <>
-      {/* Fondo oscuro traslúcido para móviles al abrir el menú */}
-      {isMobileOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 md:hidden"
-          onClick={() => setIsMobileOpen(false)}
-        />
-      )}
-
-      {/* Sidebar contenedor */}
-      <aside 
-        className={`fixed md:static inset-y-0 left-0 z-50 w-64 bg-slate-950 border-r border-slate-800 flex flex-col justify-between p-4 shrink-0 transition-transform duration-300 ease-in-out ${
-          isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}
-      >
-        <div>
-          {/* Header del Sidebar */}
-          <div className="flex items-center justify-between px-3 py-4 mb-6 border-b border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold text-xl">
-                AW
-              </div>
-              <div>
-                <h1 className="font-bold text-slate-100 text-sm leading-tight">AdventureWorks</h1>
-                <span className="text-xs text-slate-400">Módulo Producción</span>
-              </div>
-            </div>
-
-            {/* Botón de cerrar solo visible en celulares */}
-            <button 
-              onClick={() => setIsMobileOpen(false)}
-              className="md:hidden text-slate-400 hover:text-slate-100 p-1"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          {/* Menú de Navegación */}
-          <nav className="space-y-1">
-            {menuItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleSelectTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                    isActive
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
-                      : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-                  }`}
-                >
-                  <Icon size={18} />
-                  {item.label}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        {/* Perfil del usuario y Cerrar Sesión */}
-        <div className="border-t border-slate-800 pt-4 px-3 flex items-center justify-between">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-emerald-400 shrink-0">
-              {user?.email?.substring(0, 2).toUpperCase() || 'OP'}
-            </div>
-            <div className="text-xs truncate">
-              <p className="font-medium text-slate-200 truncate">{user?.user_metadata?.full_name || 'Operador'}</p>
-              <p className="text-slate-500 truncate text-[10px]">{user?.email}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            title="Cerrar Sesión"
-            className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-slate-900 transition"
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-      </aside>
-    </>
-  );
+export default function Sidebar({ activeTab, setActiveTab, user, isMobileOpen, setIsMobileOpen, onLogout }) {
+  return <>
+    {isMobileOpen && <button className="sidebar-backdrop" aria-label="Cerrar navegación" onClick={() => setIsMobileOpen(false)} />}
+    <aside className={`sidebar ${isMobileOpen ? 'sidebar-open' : ''}`}>
+      <div className="brand"><span className="brand-mark"><Layers3 size={24} /></span><div><strong>Adventure<span>Works</span></strong><small>OPERATIONS PLATFORM</small></div><button className="icon-button mobile-toggle" aria-label="Cerrar menú" onClick={() => setIsMobileOpen(false)}><X size={18} /></button></div>
+      <div className="workspace-label"><span className="workspace-symbol">AW</span><div><strong>Control de producción</strong><small>Espacio de trabajo</small></div></div>
+      <p className="nav-label">OPERACIÓN</p>
+      <nav aria-label="Navegación principal">{items.map(({ id, label, icon: Icon }) => <button key={id} aria-current={activeTab === id ? 'page' : undefined} onClick={() => setActiveTab(id)} className={`nav-item ${activeTab === id ? 'active' : ''}`}><Icon size={19} /><span>{label}</span>{activeTab === id && <span className="nav-indicator" />}</button>)}</nav>
+      <div className="sidebar-bottom"><div className="sidebar-tip"><Layers3 size={20} /><strong>Una operación conectada.</strong><p>Consulta existencias antes de planificar tu próxima orden.</p><button onClick={() => setActiveTab('inventory')}>Ver inventario <ArrowUpRight size={15} /></button></div><div className="user-profile"><span className="avatar">{user?.email?.slice(0, 2).toUpperCase() || 'OP'}</span><div><strong>{user?.user_metadata?.full_name || 'Operador'}</strong><small>{user?.email}</small></div><button className="icon-button" onClick={onLogout} aria-label="Cerrar Sesión" title="Cerrar Sesión"><LogOut size={17} /></button></div></div>
+    </aside>
+  </>;
 }

@@ -1,0 +1,18 @@
+﻿import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { number } from '../services/operations';
+
+const preciseMoney = (value) => new Intl.NumberFormat('es-CO', {
+  style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2,
+}).format(value);
+
+export default function Analytics({ stats, compact = false }) {
+  const ranking = [...stats.commercial].sort((a, b) => b.listprice - a.listprice).slice(0, compact ? 6 : 10);
+  return <div className={compact ? 'chart-grid' : 'space-y-6'}>
+    <section className="panel chart-panel"><div className="panel-heading"><div><span className="eyebrow">ESTRUCTURA DE PRECIOS</span><h2>{compact ? 'Productos de mayor valor' : 'Precio de lista vs. costo estándar'}</h2></div><span className="tag">USD</span></div>
+      {ranking.length ? <div className="chart-area"><ResponsiveContainer width="100%" height="100%"><BarChart data={ranking} margin={{ top: 10, left: 0, right: 10, bottom: 15 }}><CartesianGrid strokeDasharray="3 5" stroke="#242d39" vertical={false} /><XAxis dataKey="productnumber" stroke="#8b98aa" fontSize={10} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={6} /><YAxis stroke="#8b98aa" fontSize={11} tickLine={false} axisLine={false} width={55} tickFormatter={(value) => `$${value / 1000}k`} /><Tooltip contentStyle={{ background: '#151c26', border: '1px solid #334155', borderRadius: 12, color: '#f5f7fa' }} itemStyle={{ color: '#f5f7fa' }} labelFormatter={(code) => { const product = ranking.find((item) => item.productnumber === code); return product ? `${product.name} · ${code}` : code; }} formatter={(value) => preciseMoney(value)} cursor={{ fill: '#ffffff08' }} /><Legend iconType="circle" wrapperStyle={{ fontSize: 11, paddingTop: 16 }} /><Bar isAnimationActive={false} name="Precio lista" dataKey="listprice" fill="#c5f277" radius={[4, 4, 0, 0]} maxBarSize={25} /><Bar isAnimationActive={false} name="Costo estándar" dataKey="standardcost" fill="#607b9d" radius={[4, 4, 0, 0]} maxBarSize={25} /></BarChart></ResponsiveContainer></div> : <div className="empty-state">No hay productos con precio de venta.</div>}
+      <p className="panel-note">Top {ranking.length} por precio de lista, identificado por código de producto. Variantes de talla o color pueden compartir precio y costo. Consulta una barra para ver el nombre completo y los importes exactos.</p>
+    </section>
+    <section className="panel"><div className="panel-heading"><div><span className="eyebrow">DISTRIBUCIÓN DE STOCK</span><h2>Unidades por ubicación</h2></div><span className="tag">{stats.locations.length} centros</span></div><div className="location-bars">{stats.locations.slice(0, compact ? 5 : undefined).map((l, index) => <div className="location-bar" key={l.id}><div><span><small className="mono">{String(index + 1).padStart(2, '0')}</small>{l.name}</span><strong>{number(l.quantity)}</strong></div><div className="bar-track"><div style={{ width: `${stats.totalUnits ? l.quantity / stats.totalUnits * 100 : 0}%` }} /></div></div>)}{!stats.locations.length && <p className="empty-state">No hay registros de inventario disponibles.</p>}</div><p className="panel-note">{compact ? 'Las cinco ubicaciones con más unidades.' : 'Todas las ubicaciones con registros.'} Porcentaje del stock total consultado.</p></section>
+    {!compact && <section className="insight-strip"><div><span className="eyebrow">LECTURA DEL CATÁLOGO</span><h2>{stats.margin.toFixed(1)}% de margen sobre precio</h2></div><p>Calculado como Σ(precio − costo) / Σ(precio), sobre {stats.commercial.length} productos con precio de venta. No representa utilidad realizada ni considera cantidades vendidas.</p></section>}
+  </div>;
+}
